@@ -2,7 +2,7 @@ require 'torch'
 require 'paths'
 require 'image'
 require 'utils'
-debugger = require 'fb.debugger'
+-- debugger = require 'fb.debugger'
 
 
 local KTHDataset = torch.class('KTHLoader')
@@ -32,7 +32,7 @@ function KTHDataset:__init(opt, data_type)
     for i = 1,#data do 
       for d = 1,#data[i].indices do
         local len = data[i].indices[d][2] - data[i].indices[d][1] + 1
-        if len < 0 then debugger.enter() end
+        -- if len < 0 then debugger.enter() end
         shortest = math.min(shortest, len)
         longest = math.max(longest, len)
       end
