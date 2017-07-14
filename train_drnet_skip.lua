@@ -52,7 +52,7 @@ assert(optim[opt.optimizer] ~= nil, 'unknown optimizer: ' .. opt.optimizer)
 opt.optimizer = optim[opt.optimizer]
 
 -- setup some stuff
-torch.setnumthreads(1)
+torch.setnumthreads(opt.nThreads)
 print('<torch> set nb of threads to ' .. torch.getnumthreads())
 torch.setdefaulttensortype('torch.FloatTensor')
 
