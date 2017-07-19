@@ -38,7 +38,8 @@ opt = lapp[[
   --unet             (default 'dcgan')
   --nThreads         (default 0)                 number of dataloading threads
   --dataPool         (default 200)
-  --dataWarmup       (default 10)  
+  --dataWarmup       (default 10)
+  --mode             (default 'train')           mode of operation
 ]]  
 
 opt.save = ('%s/%s/%s'):format(opt.save, opt.dataset, opt.name)
@@ -179,18 +180,25 @@ function plot_swap(x_cpu, fname)
   end
 
   local to_plot = {}
+  -- loop through number of content frames (default 1)
   for i=1,opt.nShare do
     table.insert(to_plot, torch.zeros(unpack(opt.geometry)))
   end
+  -- for max number of frame predictions:
   for t=1,opt.maxStep do
     table.insert(to_plot, x[t][1]:float())
   end
+
   for i=1,N do
+    -- loop through number of content frames (default 1)
     for ii=1,opt.nShare do
       table.insert(to_plot, x1[ii][i]:float())
+      image.save(('%s/special/%s_%d-gt_%d_%d.png'):format(opt.save, fname, epoch, i, ii), image.toDisplayTensor{input=x1[ii][i]:float(), scaleeach=false})
     end
+    -- for max number of frame predictions:
     for j=1,opt.maxStep do
       table.insert(to_plot, pred[j][i]:float())
+      image.save(('%s/special/%s_%d-pred_%d_%d.png'):format(opt.save, fname, epoch, i, j), image.toDisplayTensor{input=pred[j][i]:float(), scaleeach=false})
     end
   end
   
@@ -335,74 +343,83 @@ else
   total_iter = 0
 end
 epoch = start_epoch
-while true do
+
+if opt.mode == 'predict' then
   collectgarbage()
   collectgarbage()
-
-  -- train
-  print('\n<trainer> Epoch ' .. epoch )
-  netEC:training()
-  netEP:training()
-  netC:training()
-  local iter, pred_mse, latent_mse, sd_acc, sd_nll = 0, 0, 0, 0, 0
-  local nTrain = opt.epochSize
-  for i=1,nTrain,opt.batchSize do
-    xlua.progress(i, nTrain)
-    local batch = trainLoader:getBatch(opt.batchSize, opt.maxStep)
-    local nll, acc_s, acc_d = train_scene_discriminator(batch)
-    sd_nll = sd_nll + nll
-    sd_acc = sd_acc + (acc_s+acc_d)
-    local p_mse, l_mse = train(batch)
-    pred_mse = pred_mse + p_mse
-    latent_mse = latent_mse + l_mse
-    iter=iter+1
-    total_iter = total_iter + 1
-  end
-  print(('\n(%d)\tprediction mse = %.4f, latent mse = %.4f, scene disc acc = %.4f%%, scene disc nll = %.4f'):format(total_iter, pred_mse/iter, latent_mse/iter, 100*sd_acc/(opt.batchSize*iter), sd_nll/iter))
-
-  train_log:write(('%.4f\t%.4f\t%.4f\t%.4f\n'):format(pred_mse/iter, latent_mse/iter, sd_nll/iter, 100*sd_acc/(opt.batchSize*iter)))
-  train_log:flush()
-
-  -- test
-  netEC:evaluate()
-  netEP:evaluate()
-  netC:evaluate()
-  local iter, pred_mse, latent_mse, sd_nll, sd_acc = 0, 0, 0, 0, 0
-  local nTest = 1000
-  for i=1,nTest,opt.batchSize do
-    local p_mse, l_mse, nll, acc = test(valLoader:getBatch(opt.batchSize, opt.maxStep,  4))
-    pred_mse = pred_mse + p_mse
-    latent_mse = latent_mse + l_mse
-    sd_nll = sd_nll + nll
-    sd_acc = sd_acc + acc
-    iter=iter+1
-  end
-  print(('\tprediction mse = %.4f, latent mse = %.4f'):format(pred_mse/iter, latent_mse/iter))
-
-  test_log:write(('%.4f\t%.4f\t%.4f\t%.4f\n'):format(pred_mse/iter, latent_mse/iter, sd_nll/iter, 100*sd_acc/(opt.batchSize*iter)))
-  test_log:flush()
-
-  if pred_mse/iter < best then
-    best = pred_mse / iter
-    print(('Saving best model so far (pred mse = %.4f) %s/model_best.t7'):format(pred_mse/iter, opt.save))
-    torch.save(('%s/model_best.t7'):format(opt.save), {netEC=sanitize(netEC), netEP=sanitize(netEP), opt=opt, epoch=epoch, best=best, total_iter=total_iter})
-  end
- 
-  -- plot 
-  --netEC:evaluate()
-  --siameseEC:evaluate()
-  plot_pred(plot_x_val, 'val')
-  plot_pred(plot_x_train, 'train')
-
+  print(('\nMODE: Predict\nGenerating plots in %s/%s'):format(opt.save, 'special'))
   plot_swap(valLoader:getBatch(opt.batchSize, opt.maxStep), 'val')
-  plot_swap(trainLoader:getBatch(opt.batchSize, opt.maxStep), 'train')
+else
+  while true do
+    collectgarbage()
+    collectgarbage()
 
-  if epoch % 1 == 0 then
-    print(('Saving model %s/model.t7'):format(opt.save))
-    torch.save(('%s/model.t7'):format(opt.save), {netC=sanitize(netC), netEC=sanitize(netEC), netEP=sanitize(netEP), opt=opt, epoch=epoch, best=best, total_iter=total_iter})
+    -- train
+    print('\n<trainer> Epoch ' .. epoch )
+    netEC:training()
+    netEP:training()
+    netC:training()
+    local iter, pred_mse, latent_mse, sd_acc, sd_nll = 0, 0, 0, 0, 0
+    local nTrain = opt.epochSize
+    for i=1,nTrain,opt.batchSize do
+      xlua.progress(i, nTrain)
+      local batch = trainLoader:getBatch(opt.batchSize, opt.maxStep)
+      local nll, acc_s, acc_d = train_scene_discriminator(batch)
+      sd_nll = sd_nll + nll
+      sd_acc = sd_acc + (acc_s+acc_d)
+      local p_mse, l_mse = train(batch)
+      pred_mse = pred_mse + p_mse
+      latent_mse = latent_mse + l_mse
+      iter=iter+1
+      total_iter = total_iter + 1
+    end
+    print(('\n(%d)\tprediction mse = %.4f, latent mse = %.4f, scene disc acc = %.4f%%, scene disc nll = %.4f'):format(total_iter, pred_mse/iter, latent_mse/iter, 100*sd_acc/(opt.batchSize*iter), sd_nll/iter))
+
+    train_log:write(('%.4f\t%.4f\t%.4f\t%.4f\n'):format(pred_mse/iter, latent_mse/iter, sd_nll/iter, 100*sd_acc/(opt.batchSize*iter)))
+    train_log:flush()
+
+    -- test
+    netEC:evaluate()
+    netEP:evaluate()
+    netC:evaluate()
+    local iter, pred_mse, latent_mse, sd_nll, sd_acc = 0, 0, 0, 0, 0
+    local nTest = 1000
+    for i=1,nTest,opt.batchSize do
+      local p_mse, l_mse, nll, acc = test(valLoader:getBatch(opt.batchSize, opt.maxStep,  4))
+      pred_mse = pred_mse + p_mse
+      latent_mse = latent_mse + l_mse
+      sd_nll = sd_nll + nll
+      sd_acc = sd_acc + acc
+      iter=iter+1
+    end
+    print(('\tprediction mse = %.4f, latent mse = %.4f'):format(pred_mse/iter, latent_mse/iter))
+
+    test_log:write(('%.4f\t%.4f\t%.4f\t%.4f\n'):format(pred_mse/iter, latent_mse/iter, sd_nll/iter, 100*sd_acc/(opt.batchSize*iter)))
+    test_log:flush()
+
+    if pred_mse/iter < best then
+      best = pred_mse / iter
+      print(('Saving best model so far (pred mse = %.4f) %s/model_best.t7'):format(pred_mse/iter, opt.save))
+      torch.save(('%s/model_best.t7'):format(opt.save), {netEC=sanitize(netEC), netEP=sanitize(netEP), opt=opt, epoch=epoch, best=best, total_iter=total_iter})
+    end
+
+    -- plot
+    --netEC:evaluate()
+    --siameseEC:evaluate()
+    plot_pred(plot_x_val, 'val')
+    plot_pred(plot_x_train, 'train')
+
+    plot_swap(valLoader:getBatch(opt.batchSize, opt.maxStep), 'val')
+    plot_swap(trainLoader:getBatch(opt.batchSize, opt.maxStep), 'train')
+
+    if epoch % 1 == 0 then
+      print(('Saving model %s/model.t7'):format(opt.save))
+      torch.save(('%s/model.t7'):format(opt.save), {netC=sanitize(netC), netEC=sanitize(netEC), netEP=sanitize(netEP), opt=opt, epoch=epoch, best=best, total_iter=total_iter})
+    end
+    epoch = epoch+1
+    if epoch > opt.nEpochs then break end
   end
-  epoch = epoch+1
-  if epoch > opt.nEpochs then break end
 end
+
 train_log:close()
 test_log:close()
